@@ -8,8 +8,8 @@ Replaces Hermes's built-in memory system with persistent knowledge stored in you
 
 - **System prompt injection** — MEMORY.md vault index is injected into every session
 - **Hybrid search** — FTS5 keyword + sqlite-vec semantic search over all vault notes
-- **Auto-save sessions** — session summaries saved to `00_Inbox` on session end
 - **Memory mirroring** — built-in memory writes are replicated as vault notes
+- **Vault-native notes** — created notes follow the vault's frontmatter conventions (id, tags, created, type, related)
 - **4 tools** — `shmulsidian_search`, `shmulsidian_read`, `shmulsidian_create`, `shmulsidian_list`
 
 ## Setup

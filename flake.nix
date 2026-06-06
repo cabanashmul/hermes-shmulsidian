@@ -38,13 +38,14 @@
           cfg = config.services.hermes-agent;
           system = pkgs.stdenv.hostPlatform.system;
           pluginPkg = self.packages.${system}.default;
+          pythonPkgs = pkgs.python312Packages;
         in {
           config = lib.mkIf cfg.enable {
             services.hermes-agent = {
               extraPlugins = [ pluginPkg ];
-              extraPythonPackages = ps: with ps; [
-                sqlite-vec
-                fastembed
+              extraPythonPackages = [
+                pythonPkgs.sqlite-vec
+                pythonPkgs.fastembed
               ];
             };
           };

@@ -96,19 +96,20 @@ READ_NOTE_SCHEMA = {
 CREATE_NOTE_SCHEMA = {
     "name": "shmulsidian_create",
     "description": (
-        "Create a new note in the vault. Adds YAML frontmatter with title, "
-        "created date, and optional tags. Defaults to 00_Inbox folder."
+        "Create a new note in the vault following vault conventions. "
+        "Frontmatter includes id, tags, created date. Title goes in a # heading. "
+        "Defaults to 00_Inbox folder."
     ),
     "parameters": {
         "type": "object",
         "properties": {
-            "title": {
+            "heading": {
                 "type": "string",
-                "description": "Note title.",
+                "description": "Note title (becomes the # heading).",
             },
             "body": {
                 "type": "string",
-                "description": "Note content (markdown).",
+                "description": "Note content (markdown, below the heading).",
             },
             "folder": {
                 "type": "string",
@@ -117,10 +118,19 @@ CREATE_NOTE_SCHEMA = {
             "tags": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Optional tags for the note.",
+                "description": "Tags for the note frontmatter.",
+            },
+            "type": {
+                "type": "string",
+                "description": "Note type (e.g. 'zettel', 'project-note', 'triage').",
+            },
+            "related": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Related note paths or wikilinks.",
             },
         },
-        "required": ["title", "body"],
+        "required": ["heading", "body"],
     },
 }
 
@@ -186,28 +196,41 @@ def _read_note_file(vault: Path, path: str) -> dict:
     return {"path": path, "content": content, "size": st.st_size, "mtime": st.st_mtime}
 
 
-def _create_note_file(vault: Path, title: str, body: str,
-                      folder: str = "00_Inbox", tags: list[str] | None = None) -> dict:
+def _create_note_file(vault: Path, heading: str, body: str,
+                      folder: str = "00_Inbox", tags: list[str] | None = None,
+                      note_type: str | None = None,
+                      related: list[str] | None = None) -> dict:
     folder_path = _safe_join(vault, folder)
     folder_path.mkdir(parents=True, exist_ok=True)
 
     stamp = dt.datetime.now().strftime("%Y%m%d%H%M%S")
-    slug = SAFE_FILENAME.sub("", title).strip().replace(" ", "-").lower()[:60] or "note"
+    slug = SAFE_FILENAME.sub("", heading).strip().replace(" ", "-").lower()[:60] or "note"
     fname = f"{stamp}-{slug}{MD_SUFFIX}"
     target = folder_path / fname
     if target.exists():
         import os as _os
         target = folder_path / f"{stamp}-{slug}-{_os.urandom(2).hex()}{MD_SUFFIX}"
 
+    # Frontmatter follows vault conventions: id, tags, created, type, related
     fm_lines = [
         "---",
-        f"title: {title}",
-        f"created: {dt.datetime.now().isoformat(timespec='seconds')}",
+        f"id: {stamp}",
+        "tags: " + json.dumps(tags or []),
+        f"created: {dt.datetime.now().strftime('%Y-%m-%d')}",
     ]
-    if tags:
-        fm_lines.append("tags: [" + ", ".join(tags) + "]")
+    if note_type:
+        fm_lines.append(f"type: {note_type}")
+    if related:
+        fm_lines.append("related:")
+        for r in related:
+            fm_lines.append(f'  - "{r}"')
     fm_lines.append("---")
-    target.write_text("\n".join(fm_lines) + "\n\n" + body.rstrip() + "\n", encoding="utf-8")
+    target.write_text(
+        "\n".join(fm_lines) + "\n\n"
+        + f"# {heading}\n\n"
+        + body.rstrip() + "\n",
+        encoding="utf-8",
+    )
 
     rel = target.relative_to(vault).as_posix()
     return {"path": rel, "size": target.stat().st_size}
@@ -582,48 +605,6 @@ class ShmulsidianMemoryProvider(MemoryProvider):
                     pass
             threading.Thread(target=_reindex, daemon=True).start()
 
-    def on_session_end(self, messages: List[Dict[str, Any]]) -> None:
-        """Save a session summary note to 00_Inbox on session end."""
-        if not self._vault or not messages:
-            return
-
-        try:
-            # Build a concise summary of the session
-            user_msgs = [m for m in messages if m.get("role") == "user"]
-            if not user_msgs:
-                return
-
-            first_msg = user_msgs[0].get("content", "")
-            if isinstance(first_msg, list):
-                first_msg = " ".join(
-                    p.get("text", "") for p in first_msg if isinstance(p, dict)
-                )[:200]
-
-            title = f"Session {self._session_id}"
-            body_lines = [f"Session ID: {self._session_id}", ""]
-            body_lines.append("## Key Messages")
-            for m in user_msgs[:5]:
-                content = m.get("content", "")
-                if isinstance(content, list):
-                    content = " ".join(
-                        p.get("text", "") for p in content if isinstance(p, dict)
-                    )
-                if content:
-                    body_lines.append(f"- {content[:200]}")
-
-            _create_note_file(
-                self._vault,
-                title=title,
-                body="\n".join(body_lines),
-                folder="00_Inbox",
-                tags=["session", "hermes"],
-            )
-            # Trigger re-index
-            if self._index:
-                self._index.reindex()
-        except Exception as e:
-            logger.debug("shmulsidian session save failed: %s", e)
-
     def on_memory_write(
         self,
         action: str,
@@ -638,10 +619,11 @@ class ShmulsidianMemoryProvider(MemoryProvider):
             tag = "memory" if target == "memory" else "user-profile"
             _create_note_file(
                 self._vault,
-                title=f"Memory: {content[:60]}",
+                heading=f"Memory: {content[:60]}",
                 body=f"Action: {action}\nTarget: {target}\n\n{content}",
                 folder="00_Inbox",
                 tags=["memory", tag, "hermes"],
+                note_type="memory-write",
             )
         except Exception as e:
             logger.debug("shmulsidian memory mirror failed: %s", e)
@@ -671,11 +653,16 @@ class ShmulsidianMemoryProvider(MemoryProvider):
                 return json.dumps({"success": True, **note})
 
             elif tool_name == "shmulsidian_create":
-                title = args.get("title", "")
+                heading = args.get("heading", "")
                 body = args.get("body", "")
                 folder = args.get("folder", "00_Inbox")
                 tags = args.get("tags")
-                result = _create_note_file(self._vault, title, body, folder, tags)
+                note_type = args.get("type")
+                related = args.get("related")
+                result = _create_note_file(
+                    self._vault, heading, body, folder, tags,
+                    note_type=note_type, related=related,
+                )
                 if self._index:
                     self._index.reindex()
                 return json.dumps({"success": True, **result})

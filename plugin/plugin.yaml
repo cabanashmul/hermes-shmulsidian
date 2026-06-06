@@ -1,0 +1,3 @@
+name: shmulsidian
+version: "0.1.0"
+description: "shmulsidian — Obsidian vault memory provider for Hermes. Uses FTS5 + semantic search over your local vault."

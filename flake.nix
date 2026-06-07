@@ -38,15 +38,16 @@
           cfg = config.services.hermes-agent;
           system = pkgs.stdenv.hostPlatform.system;
           pluginPkg = self.packages.${system}.default;
-          pythonPkgs = pkgs.python312Packages;
         in {
           config = lib.mkIf cfg.enable {
             services.hermes-agent = {
               extraPlugins = [ pluginPkg ];
-              extraPythonPackages = [
-                pythonPkgs.sqlite-vec
-                pythonPkgs.fastembed
-              ];
+              # NOTE: sqlite-vec and fastembed are NOT in extraPythonPackages
+              # because fastembed pulls 'requests' which collides with hermes's
+              # sealed venv. Install via pip in the container instead:
+              #   pip install sqlite-vec fastembed
+              # The plugin falls back to FTS5-only keyword search if these
+              # are absent.
             };
           };
         };

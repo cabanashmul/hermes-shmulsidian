@@ -23,9 +23,9 @@
             src = ./plugin;
             dontBuild = true;
             installPhase = ''
-              mkdir -p $out/shmulsidian
-              cp $src/plugin.yaml $out/shmulsidian/
-              cp $src/__init__.py $out/shmulsidian/
+              mkdir -p $out
+              cp $src/plugin.yaml $out/
+              cp $src/__init__.py $out/
             '';
           };
         }

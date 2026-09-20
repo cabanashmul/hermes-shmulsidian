@@ -108,7 +108,7 @@
               cp -a "$STORE_PLUGIN" "$LOCAL"
               chmod -R u+w "$LOCAL"
 
-              # 3. Patch __init__.py: insert bootstrap after the module docstring
+              # 3. Patch __init__.py: insert bootstrap after docstring + __future__ imports
               ${pkgs.python3}/bin/python3 -c "
             import re
             init_path = '$LOCAL/__init__.py'
@@ -117,8 +117,10 @@
                 content = f.read()
             with open(bootstrap_path) as f:
                 bootstrap = f.read()
-            # Find end of first triple-quoted docstring
-            m = re.match(r'(\"\"\".*?\"\"\")\s*', content, re.DOTALL)
+            # Find end of first triple-quoted docstring, then skip any
+            # 'from __future__ import ...' lines (Python requires these
+            # at the very top of the file).
+            m = re.match(r'(\"\"\".*?\"\"\")\s*(from __future__.*\n)*', content, re.DOTALL)
             if m and 'shmulsidian venv bootstrap' not in content:
                 pos = m.end()
                 content = content[:pos] + '\n' + bootstrap + '\n' + content[pos:]
